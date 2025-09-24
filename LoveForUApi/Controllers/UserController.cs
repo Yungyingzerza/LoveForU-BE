@@ -143,7 +143,7 @@ public class UserController : ControllerBase
     private static UserResponse ToResponse(User user) => new(user.Id, user.displayName, user.pictureUrl);
 }
 
-public record LineLoginRequest([property: Required] string AccessToken);
+public record LineLoginRequest([param: Required] string AccessToken);
 
 public record UserResponse(string Id, string DisplayName, string PictureUrl);
 

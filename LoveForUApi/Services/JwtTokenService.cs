@@ -29,6 +29,11 @@ internal sealed class JwtTokenService : IJwtTokenService
             throw new InvalidOperationException("JWT signing key is not configured");
         }
 
+        if (Encoding.UTF8.GetByteCount(_options.SigningKey) < 32)
+        {
+            throw new InvalidOperationException("JWT signing key must be at least 256 bits (32 bytes). Provide a longer key.");
+        }
+
         _credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.SigningKey)),
             SecurityAlgorithms.HmacSha256

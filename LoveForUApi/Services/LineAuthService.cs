@@ -76,14 +76,7 @@ internal sealed class LineAuthService : ILineAuthService
 
     private async Task<bool> ValidateTokenAsync(string accessToken, CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "oauth2/v2.1/verify")
-        {
-            Content = new FormUrlEncodedContent(new KeyValuePair<string, string>[]
-            {
-                new("client_id", _options.ChannelId),
-                new("access_token", accessToken)
-            })
-        };
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"oauth2/v2.1/verify?access_token={Uri.EscapeDataString(accessToken)}");
 
         var response = await _httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
