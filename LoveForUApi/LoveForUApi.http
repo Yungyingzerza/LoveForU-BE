@@ -1,0 +1,6 @@
+@LoveForUApi_HostAddress = http://localhost:5022
+
+GET {{LoveForUApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

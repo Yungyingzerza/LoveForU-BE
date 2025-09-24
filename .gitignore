@@ -1,0 +1,50 @@
+# Build artifacts
+bin/
+obj/
+out/
+publish/
+artifacts/
+
+# IDE and tooling
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.userprefs
+*.sln.docstates
+
+# Rider & ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# Logs and diagnostics
+*.log
+[Ll]og/
+[Ll]ogs/
+TestResults/
+BenchmarkDotNet.Artifacts/
+
+# Packages
+*.nupkg
+*.snupkg
+packages/
+
+# Coverage data
+coverage/
+*.coverage
+*.coveragexml
+
+# Application configuration secrets
+appsettings.Development.json
+appsettings.Local.json
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Misc
+*.swp
+*.tmp
+*.bak
