@@ -10,4 +10,7 @@ public class LoveForUContext : DbContext
     }
 
     public DbSet<User> Users { get; set; } = null!;
+    public DbSet<Photo> Photos { get; set; } = null!;
+    public DbSet<PhotoShare> PhotoShares { get; set; } = null!;
+    public DbSet<Friendship> Friendships { get; set; } = null!;
 }
