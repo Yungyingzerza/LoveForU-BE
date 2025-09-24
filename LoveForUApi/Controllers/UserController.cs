@@ -1,121 +1,156 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
+using System.ComponentModel.DataAnnotations;
+using LoveForU.Models;
+using LoveForUApi.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using LoveForU.Models;
 
-namespace LoveForUApi.Controllers
+namespace LoveForUApi.Controllers;
+
+[Route("api/[controller]")]
+[ApiController]
+public class UserController : ControllerBase
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class UserController : ControllerBase
+    private readonly LoveForUContext _context;
+    private readonly ILineAuthService _lineAuthService;
+    private readonly IJwtTokenService _jwtTokenService;
+
+    public UserController(
+        LoveForUContext context,
+        ILineAuthService lineAuthService,
+        IJwtTokenService jwtTokenService)
     {
-        private readonly LoveForUContext _context;
-
-        public UserController(LoveForUContext context)
-        {
-            _context = context;
-        }
-
-        // GET: api/User
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<User>>> GetUsers()
-        {
-            return await _context.Users.ToListAsync();
-        }
-
-        // GET: api/User/5
-        [HttpGet("{id}")]
-        public async Task<ActionResult<User>> GetUser(string id)
-        {
-            var user = await _context.Users.FindAsync(id);
-
-            if (user == null)
-            {
-                return NotFound();
-            }
-
-            return user;
-        }
-
-        // PUT: api/User/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutUser(string id, User user)
-        {
-            if (id != user.Id)
-            {
-                return BadRequest();
-            }
-
-            _context.Entry(user).State = EntityState.Modified;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!UserExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
-            return NoContent();
-        }
-
-        // POST: api/User
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPost]
-        public async Task<ActionResult<User>> PostUser(User user)
-        {
-            _context.Users.Add(user);
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateException)
-            {
-                if (UserExists(user.Id))
-                {
-                    return Conflict();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
-            return CreatedAtAction("GetUser", new { id = user.Id }, user);
-        }
-
-        // DELETE: api/User/5
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteUser(string id)
-        {
-            var user = await _context.Users.FindAsync(id);
-            if (user == null)
-            {
-                return NotFound();
-            }
-
-            _context.Users.Remove(user);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        private bool UserExists(string id)
-        {
-            return _context.Users.Any(e => e.Id == id);
-        }
+        _context = context;
+        _lineAuthService = lineAuthService;
+        _jwtTokenService = jwtTokenService;
     }
+
+    [HttpGet]
+    [Authorize]
+    public async Task<ActionResult<IEnumerable<UserResponse>>> GetUsers(CancellationToken cancellationToken)
+    {
+        var users = await _context.Users.AsNoTracking().ToListAsync(cancellationToken);
+        return Ok(users.Select(ToResponse));
+    }
+
+    [HttpGet("{id}")]
+    [Authorize]
+    public async Task<ActionResult<UserResponse>> GetUser(string id, CancellationToken cancellationToken)
+    {
+        var user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+        if (user is null)
+        {
+            return NotFound();
+        }
+
+        return Ok(ToResponse(user));
+    }
+
+    [HttpPut("{id}")]
+    [Authorize]
+    public async Task<IActionResult> PutUser(string id, UserUpdateRequest request, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(id, request.Id, StringComparison.Ordinal))
+        {
+            return BadRequest("User id mismatch");
+        }
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+        if (user is null)
+        {
+            return NotFound();
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.DisplayName))
+        {
+            user.displayName = request.DisplayName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.PictureUrl))
+        {
+            user.pictureUrl = request.PictureUrl;
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost]
+    [AllowAnonymous]
+    public async Task<ActionResult<UserResponse>> PostUser(LineLoginRequest request, CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.AccessToken))
+        {
+            return BadRequest("Access token is required");
+        }
+
+        var profile = await _lineAuthService.GetProfileAsync(request.AccessToken, cancellationToken);
+        if (profile is null)
+        {
+            return Unauthorized();
+        }
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == profile.UserId, cancellationToken);
+        if (user is null)
+        {
+            user = new User
+            {
+                Id = profile.UserId,
+                displayName = profile.DisplayName,
+                pictureUrl = profile.PictureUrl ?? string.Empty
+            };
+
+            _context.Users.Add(user);
+        }
+        else
+        {
+            if (!string.Equals(user.displayName, profile.DisplayName, StringComparison.Ordinal))
+            {
+                user.displayName = profile.DisplayName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(profile.PictureUrl) &&
+                !string.Equals(user.pictureUrl, profile.PictureUrl, StringComparison.Ordinal))
+            {
+                user.pictureUrl = profile.PictureUrl!;
+            }
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        var jwt = _jwtTokenService.GenerateToken(user);
+        Response.Cookies.Append(_jwtTokenService.CookieName, jwt, _jwtTokenService.BuildCookieOptions());
+
+        return Ok(ToResponse(user));
+    }
+
+    [HttpDelete("{id}")]
+    [Authorize]
+    public async Task<IActionResult> DeleteUser(string id, CancellationToken cancellationToken)
+    {
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+        if (user is null)
+        {
+            return NotFound();
+        }
+
+        _context.Users.Remove(user);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return NoContent();
+    }
+
+    private static UserResponse ToResponse(User user) => new(user.Id, user.displayName, user.pictureUrl);
+}
+
+public record LineLoginRequest([property: Required] string AccessToken);
+
+public record UserResponse(string Id, string DisplayName, string PictureUrl);
+
+public record UserUpdateRequest
+{
+    [Required]
+    public string Id { get; init; } = string.Empty;
+    public string? DisplayName { get; init; }
+    public string? PictureUrl { get; init; }
 }
