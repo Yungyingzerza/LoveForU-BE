@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace LoveForU.Models;
 
@@ -11,4 +12,5 @@ public class PhotoShare
     public User? Recipient { get; set; }
     public DateTimeOffset SharedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ViewedAt { get; set; }
+    public ICollection<ChatMessage> Messages { get; set; } = new List<ChatMessage>();
 }

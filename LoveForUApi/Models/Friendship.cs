@@ -20,4 +20,5 @@ public class Friendship
     public FriendshipStatus Status { get; set; } = FriendshipStatus.Pending;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? RespondedAt { get; set; }
+    public ChatThread? Thread { get; set; }
 }
