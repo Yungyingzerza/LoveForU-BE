@@ -4,11 +4,22 @@ using LoveForUApi.Options;
 using LoveForUApi.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+
+var webRootPath = builder.Environment.WebRootPath;
+if (string.IsNullOrWhiteSpace(webRootPath))
+{
+    webRootPath = Path.Combine(builder.Environment.ContentRootPath, "wwwroot");
+    builder.Environment.WebRootPath = webRootPath;
+}
+
+Directory.CreateDirectory(webRootPath);
+builder.Environment.WebRootFileProvider = new PhysicalFileProvider(webRootPath);
 
 builder.Services.AddControllers();
 //postgre connection
