@@ -5,6 +5,8 @@ out/
 publish/
 artifacts/
 
+uploads/
+
 # IDE and tooling
 .vs/
 .idea/
