@@ -90,6 +90,44 @@ public sealed class FriendshipController : ControllerBase
         return CreatedAtAction(nameof(GetFriendship), new { id = friendship.Id }, ToResponse(friendship));
     }
 
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<FriendListItem>>> GetFriends(CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized();
+        }
+
+        var friends = await _context.Friendships
+            .AsNoTracking()
+            .Where(f => f.Status == FriendshipStatus.Accepted &&
+                        (f.RequesterId == userId || f.AddresseeId == userId))
+            .Select(f => new
+            {
+                f.Id,
+                Friend = f.RequesterId == userId ? f.Addressee : f.Requester,
+                FriendId = f.RequesterId == userId ? f.AddresseeId : f.RequesterId,
+                f.CreatedAt,
+                f.RespondedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        var items = friends.Select(f =>
+        {
+            var friendUser = f.Friend;
+            return new FriendListItem(
+                f.Id,
+                f.FriendId,
+                friendUser?.displayName ?? string.Empty,
+                friendUser?.pictureUrl ?? string.Empty,
+                f.CreatedAt,
+                f.RespondedAt);
+        });
+
+        return Ok(items);
+    }
+
     [HttpGet("pending")]
     public async Task<ActionResult<IEnumerable<FriendshipResponse>>> GetPendingFriendships([FromQuery] string? direction, CancellationToken cancellationToken)
     {
@@ -217,3 +255,5 @@ public sealed class FriendshipController : ControllerBase
 public record AddFriendRequest(string FriendUserId);
 
 public record FriendshipResponse(Guid Id, string RequesterId, string AddresseeId, FriendshipStatus Status, DateTimeOffset CreatedAt, DateTimeOffset? RespondedAt);
+
+public record FriendListItem(Guid FriendshipId, string FriendUserId, string DisplayName, string PictureUrl, DateTimeOffset CreatedAt, DateTimeOffset? AcceptedAt);

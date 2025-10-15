@@ -63,10 +63,11 @@ public sealed class PhotoController : ControllerBase
 
         var photos = await _context.Photos.AsNoTracking()
             .Where(p => relevantUserIds.Contains(p.UploaderId))
+            .Include(p => p.Uploader)
             .OrderByDescending(p => p.CreatedAt)
             .ToListAsync(cancellationToken);
 
-        return Ok(photos.Select(ToResponse));
+        return Ok(photos.Select(p => ToResponse(p, p.Uploader?.displayName ?? string.Empty)));
     }
 
     [HttpGet("{id:guid}")]
@@ -79,6 +80,7 @@ public sealed class PhotoController : ControllerBase
         }
 
         var photo = await _context.Photos.AsNoTracking()
+            .Include(p => p.Uploader)
             .FirstOrDefaultAsync(p => p.Id == id && p.UploaderId == userId, cancellationToken);
 
         if (photo is null)
@@ -86,7 +88,7 @@ public sealed class PhotoController : ControllerBase
             return NotFound();
         }
 
-        return Ok(ToResponse(photo));
+        return Ok(ToResponse(photo, photo.Uploader?.displayName ?? string.Empty));
     }
 
     [HttpPost]
@@ -103,10 +105,10 @@ public sealed class PhotoController : ControllerBase
             return Unauthorized();
         }
 
-        var userExists = await _context.Users.AsNoTracking()
-            .AnyAsync(u => u.Id == userId, cancellationToken);
+        var user = await _context.Users.AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
 
-        if (!userExists)
+        if (user is null)
         {
             return Forbid();
         }
@@ -148,7 +150,7 @@ public sealed class PhotoController : ControllerBase
             _context.Photos.Add(photo);
             await _context.SaveChangesAsync(cancellationToken);
 
-            return CreatedAtAction(nameof(GetPhoto), new { id = photo.Id }, ToResponse(photo));
+            return CreatedAtAction(nameof(GetPhoto), new { id = photo.Id }, ToResponse(photo, user.displayName));
         }
         catch (Exception ex)
         {
@@ -162,10 +164,10 @@ public sealed class PhotoController : ControllerBase
         }
     }
 
-    private static PhotoResponse ToResponse(Photo photo)
-        => new(photo.Id, photo.UploaderId, photo.ImageUrl, photo.Caption, photo.CreatedAt);
+    private static PhotoResponse ToResponse(Photo photo, string uploaderDisplayName)
+        => new(photo.Id, photo.UploaderId, uploaderDisplayName, photo.ImageUrl, photo.Caption, photo.CreatedAt);
 }
 
 public record PhotoUploadRequest(IFormFile Image, string? Caption);
 
-public record PhotoResponse(Guid Id, string UploaderId, string ImageUrl, string? Caption, DateTimeOffset CreatedAt);
+public record PhotoResponse(Guid Id, string UploaderId, string UploaderDisplayName, string ImageUrl, string? Caption, DateTimeOffset CreatedAt);
