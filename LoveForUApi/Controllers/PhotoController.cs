@@ -52,8 +52,17 @@ public sealed class PhotoController : ControllerBase
             return Unauthorized();
         }
 
+        var friendIds = await _context.Friendships.AsNoTracking()
+            .Where(f => f.Status == FriendshipStatus.Accepted &&
+                        (f.RequesterId == userId || f.AddresseeId == userId))
+            .Select(f => f.RequesterId == userId ? f.AddresseeId : f.RequesterId)
+            .ToListAsync(cancellationToken);
+
+        friendIds.Add(userId);
+        var relevantUserIds = friendIds.Distinct().ToList();
+
         var photos = await _context.Photos.AsNoTracking()
-            .Where(p => p.UploaderId == userId)
+            .Where(p => relevantUserIds.Contains(p.UploaderId))
             .OrderByDescending(p => p.CreatedAt)
             .ToListAsync(cancellationToken);
 
