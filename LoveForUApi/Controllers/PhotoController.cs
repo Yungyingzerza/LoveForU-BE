@@ -139,29 +139,6 @@ public sealed class PhotoController : ControllerBase
                 await request.Image.CopyToAsync(stream, cancellationToken);
             }
 
-            var friendIds = await GetAcceptedFriendIds(userId, cancellationToken);
-            var acceptedFriendSet = new HashSet<string>(friendIds, StringComparer.Ordinal);
-
-            List<string> shareRecipientIds;
-            if (request.FriendIds is null)
-            {
-                shareRecipientIds = friendIds;
-            }
-            else
-            {
-                var requestedIds = request.FriendIds
-                    .Where(id => !string.IsNullOrWhiteSpace(id))
-                    .Select(id => id.Trim())
-                    .ToList();
-
-                if (requestedIds.Any(id => !acceptedFriendSet.Contains(id)))
-                {
-                    return BadRequest("You can only share photos with accepted friends.");
-                }
-
-                shareRecipientIds = requestedIds.Distinct(StringComparer.Ordinal).ToList();
-            }
-
             var photo = new Photo
             {
                 UploaderId = userId,
@@ -169,13 +146,32 @@ public sealed class PhotoController : ControllerBase
                 Caption = string.IsNullOrWhiteSpace(request.Caption) ? null : request.Caption.Trim()
             };
 
-            foreach (var recipientId in shareRecipientIds)
+            // Only create PhotoShares if specific friends are provided
+            // Empty Shares collection means shared with everyone
+            if (request.FriendIds is not null && request.FriendIds.Count > 0)
             {
-                photo.Shares.Add(new PhotoShare
+                var friendIds = await GetAcceptedFriendIds(userId, cancellationToken);
+                var acceptedFriendSet = new HashSet<string>(friendIds, StringComparer.Ordinal);
+
+                var requestedIds = request.FriendIds
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Select(id => id.Trim())
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+
+                if (requestedIds.Any(id => !acceptedFriendSet.Contains(id)))
                 {
-                    RecipientId = recipientId,
-                    Photo = photo
-                });
+                    return BadRequest("You can only share photos with accepted friends.");
+                }
+
+                foreach (var recipientId in requestedIds)
+                {
+                    photo.Shares.Add(new PhotoShare
+                    {
+                        RecipientId = recipientId,
+                        Photo = photo
+                    });
+                }
             }
 
             _context.Photos.Add(photo);
