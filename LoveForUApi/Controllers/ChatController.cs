@@ -125,8 +125,7 @@ public sealed class ChatController : ControllerBase
         }
 
         query = query.Include(m => m.Sender)
-            .Include(m => m.PhotoShare)
-                .ThenInclude(ps => ps!.Photo)
+            .Include(m => m.Photo)
             .OrderByDescending(m => m.CreatedAt);
 
         var messages = await query
@@ -182,8 +181,7 @@ public sealed class ChatController : ControllerBase
             return StatusCode(StatusCodes.Status500InternalServerError, "Recipient could not be determined.");
         }
 
-        PhotoShare? resolvedShare = null;
-        Guid? photoShareId = null;
+        Photo? resolvedPhoto = null;
         if (request.PhotoShareId.HasValue)
         {
             var existingShare = await _context.PhotoShares
@@ -206,7 +204,7 @@ public sealed class ChatController : ControllerBase
                 return BadRequest("You cannot attach this photo share to the chat message.");
             }
 
-            photoShareId = existingShare.Id;
+            resolvedPhoto = existingShare.Photo;
         }
         else if (request.PhotoId.HasValue)
         {
@@ -230,28 +228,7 @@ public sealed class ChatController : ControllerBase
                 return BadRequest("You cannot attach this photo to the chat message.");
             }
 
-            var shareForRecipient = photo.Shares
-                .FirstOrDefault(s => string.Equals(s.RecipientId, recipientId, StringComparison.Ordinal));
-
-            if (shareForRecipient is null)
-            {
-                shareForRecipient = new PhotoShare
-                {
-                    PhotoId = photo.Id,
-                    Photo = photo,
-                    RecipientId = recipientId,
-                    SharedAt = DateTimeOffset.UtcNow
-                };
-
-                _context.PhotoShares.Add(shareForRecipient);
-            }
-            else if (shareForRecipient.Photo is null)
-            {
-                shareForRecipient.Photo = photo;
-            }
-
-            resolvedShare = shareForRecipient;
-            photoShareId = shareForRecipient.Id;
+            resolvedPhoto = photo;
         }
 
         var thread = friendship.Thread;
@@ -276,8 +253,8 @@ public sealed class ChatController : ControllerBase
             SenderId = userId,
             Sender = senderIsRequester ? friendship.Requester : friendship.Addressee,
             Content = trimmedContent,
-            PhotoShareId = photoShareId,
-            PhotoShare = resolvedShare,
+            PhotoId = resolvedPhoto?.Id,
+            Photo = resolvedPhoto,
             CreatedAt = DateTimeOffset.UtcNow
         };
 
@@ -302,19 +279,9 @@ public sealed class ChatController : ControllerBase
             await _context.Entry(message).Reference(m => m.Sender).LoadAsync(cancellationToken);
         }
 
-        if (photoShareId.HasValue)
+        if (message.PhotoId.HasValue && message.Photo is null)
         {
-            if (message.PhotoShare is null)
-            {
-                message.PhotoShare = await _context.PhotoShares
-                    .AsNoTracking()
-                    .Include(ps => ps.Photo)
-                    .FirstOrDefaultAsync(ps => ps.Id == photoShareId.Value, cancellationToken);
-            }
-            else if (message.PhotoShare.Photo is null)
-            {
-                await _context.Entry(message.PhotoShare).Reference(ps => ps.Photo).LoadAsync(cancellationToken);
-            }
+            await _context.Entry(message).Reference(m => m.Photo).LoadAsync(cancellationToken);
         }
 
         var response = ToResponse(message);
@@ -368,13 +335,12 @@ public sealed class ChatController : ControllerBase
             sender?.displayName ?? string.Empty,
             sender?.pictureUrl ?? string.Empty,
             message.Content,
-            message.PhotoShareId,
-            message.PhotoShare is not null && message.PhotoShare.Photo is not null
+            message.PhotoId,
+            message.Photo is not null
                 ? new PhotoAttachmentResponse(
-                    message.PhotoShare.Id,
-                    message.PhotoShare.PhotoId,
-                    message.PhotoShare.Photo.ImageUrl,
-                    message.PhotoShare.Photo.Caption)
+                    message.Photo.Id,
+                    message.Photo.ImageUrl,
+                    message.Photo.Caption)
                 : null,
             message.CreatedAt);
     }
@@ -402,6 +368,6 @@ public record ChatMessageResponse(
     PhotoAttachmentResponse? Photo,
     DateTimeOffset CreatedAt);
 
-public record PhotoAttachmentResponse(Guid PhotoShareId, Guid PhotoId, string ImageUrl, string? Caption);
+public record PhotoAttachmentResponse(Guid PhotoId, string ImageUrl, string? Caption);
 
 public record SendChatMessageRequest(string? Content, Guid? PhotoShareId, Guid? PhotoId);

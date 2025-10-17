@@ -10,7 +10,7 @@ public class ChatMessage
     public string SenderId { get; set; } = null!;
     public User? Sender { get; set; }
     public string? Content { get; set; }
-    public Guid? PhotoShareId { get; set; }
-    public PhotoShare? PhotoShare { get; set; }
+    public Guid? PhotoId { get; set; }
+    public Photo? Photo { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

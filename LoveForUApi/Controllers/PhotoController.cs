@@ -220,16 +220,14 @@ public sealed class PhotoController : ControllerBase
 
         var shareIds = photo.Shares.Select(s => s.Id).ToArray();
 
-        if (shareIds.Length > 0)
-        {
-            var messages = await _context.ChatMessages
-                .Where(m => m.PhotoShareId.HasValue && shareIds.Contains(m.PhotoShareId.Value))
-                .ToListAsync(cancellationToken);
+        // Remove photo references from chat messages when deleting the photo
+        var messages = await _context.ChatMessages
+            .Where(m => m.PhotoId == photo.Id)
+            .ToListAsync(cancellationToken);
 
-            foreach (var message in messages)
-            {
-                message.PhotoShareId = null;
-            }
+        foreach (var message in messages)
+        {
+            message.PhotoId = null;
         }
 
         if (photo.Shares.Count > 0)
