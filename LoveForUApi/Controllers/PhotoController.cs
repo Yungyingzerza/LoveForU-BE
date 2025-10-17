@@ -52,17 +52,13 @@ public sealed class PhotoController : ControllerBase
             return Unauthorized();
         }
 
-        var friendIds = await _context.Friendships.AsNoTracking()
-            .Where(f => f.Status == FriendshipStatus.Accepted &&
-                        (f.RequesterId == userId || f.AddresseeId == userId))
-            .Select(f => f.RequesterId == userId ? f.AddresseeId : f.RequesterId)
-            .ToListAsync(cancellationToken);
-
-        friendIds.Add(userId);
-        var relevantUserIds = friendIds.Distinct().ToList();
+        var friendIds = await GetAcceptedFriendIds(userId, cancellationToken);
 
         var photos = await _context.Photos.AsNoTracking()
-            .Where(p => relevantUserIds.Contains(p.UploaderId))
+            .Where(p =>
+                p.UploaderId == userId ||
+                (friendIds.Contains(p.UploaderId) && !p.Shares.Any()) ||
+                p.Shares.Any(s => s.RecipientId == userId))
             .Include(p => p.Uploader)
             .OrderByDescending(p => p.CreatedAt)
             .ToListAsync(cancellationToken);
@@ -81,7 +77,10 @@ public sealed class PhotoController : ControllerBase
 
         var photo = await _context.Photos.AsNoTracking()
             .Include(p => p.Uploader)
-            .FirstOrDefaultAsync(p => p.Id == id && p.UploaderId == userId, cancellationToken);
+            .FirstOrDefaultAsync(p =>
+                    p.Id == id &&
+                    (p.UploaderId == userId || p.Shares.Any(s => s.RecipientId == userId)),
+                cancellationToken);
 
         if (photo is null)
         {
@@ -140,12 +139,44 @@ public sealed class PhotoController : ControllerBase
                 await request.Image.CopyToAsync(stream, cancellationToken);
             }
 
+            var friendIds = await GetAcceptedFriendIds(userId, cancellationToken);
+            var acceptedFriendSet = new HashSet<string>(friendIds, StringComparer.Ordinal);
+
+            List<string> shareRecipientIds;
+            if (request.FriendIds is null)
+            {
+                shareRecipientIds = friendIds;
+            }
+            else
+            {
+                var requestedIds = request.FriendIds
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Select(id => id.Trim())
+                    .ToList();
+
+                if (requestedIds.Any(id => !acceptedFriendSet.Contains(id)))
+                {
+                    return BadRequest("You can only share photos with accepted friends.");
+                }
+
+                shareRecipientIds = requestedIds.Distinct(StringComparer.Ordinal).ToList();
+            }
+
             var photo = new Photo
             {
                 UploaderId = userId,
                 ImageUrl = relativePath,
                 Caption = string.IsNullOrWhiteSpace(request.Caption) ? null : request.Caption.Trim()
             };
+
+            foreach (var recipientId in shareRecipientIds)
+            {
+                photo.Shares.Add(new PhotoShare
+                {
+                    RecipientId = recipientId,
+                    Photo = photo
+                });
+            }
 
             _context.Photos.Add(photo);
             await _context.SaveChangesAsync(cancellationToken);
@@ -164,10 +195,21 @@ public sealed class PhotoController : ControllerBase
         }
     }
 
+    private Task<List<string>> GetAcceptedFriendIds(string userId, CancellationToken cancellationToken)
+        => _context.Friendships.AsNoTracking()
+            .Where(f => f.Status == FriendshipStatus.Accepted &&
+                        (f.RequesterId == userId || f.AddresseeId == userId))
+            .Select(f => f.RequesterId == userId ? f.AddresseeId : f.RequesterId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
     private static PhotoResponse ToResponse(Photo photo, string uploaderDisplayName)
         => new(photo.Id, photo.UploaderId, uploaderDisplayName, photo.ImageUrl, photo.Caption, photo.CreatedAt);
 }
 
-public record PhotoUploadRequest(IFormFile Image, string? Caption);
+public record PhotoUploadRequest(IFormFile Image, string? Caption)
+{
+    public List<string>? FriendIds { get; init; }
+}
 
 public record PhotoResponse(Guid Id, string UploaderId, string UploaderDisplayName, string ImageUrl, string? Caption, DateTimeOffset CreatedAt);
