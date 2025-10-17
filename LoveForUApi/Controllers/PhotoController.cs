@@ -195,6 +195,79 @@ public sealed class PhotoController : ControllerBase
         }
     }
 
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> DeletePhoto(Guid id, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized();
+        }
+
+        var photo = await _context.Photos
+            .Include(p => p.Shares)
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+
+        if (photo is null)
+        {
+            return NotFound();
+        }
+
+        if (!string.Equals(photo.UploaderId, userId, StringComparison.Ordinal))
+        {
+            return Forbid();
+        }
+
+        var shareIds = photo.Shares.Select(s => s.Id).ToArray();
+
+        if (shareIds.Length > 0)
+        {
+            var messages = await _context.ChatMessages
+                .Where(m => m.PhotoShareId.HasValue && shareIds.Contains(m.PhotoShareId.Value))
+                .ToListAsync(cancellationToken);
+
+            foreach (var message in messages)
+            {
+                message.PhotoShareId = null;
+            }
+        }
+
+        if (photo.Shares.Count > 0)
+        {
+            _context.PhotoShares.RemoveRange(photo.Shares);
+        }
+
+        _context.Photos.Remove(photo);
+
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogError(ex, "Failed to delete photo {PhotoId} for user {UserId}", id, userId);
+            return StatusCode(StatusCodes.Status500InternalServerError, "Unable to delete photo at this time.");
+        }
+
+        try
+        {
+            var uploadsRoot = _environment.WebRootPath ?? Path.Combine(_environment.ContentRootPath, "wwwroot");
+            var relativePath = photo.ImageUrl.TrimStart('/', '\\');
+            var filePath = Path.Combine(uploadsRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
+
+            if (System.IO.File.Exists(filePath))
+            {
+                System.IO.File.Delete(filePath);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete photo file for {PhotoId} at path derived from {ImageUrl}", id, photo.ImageUrl);
+        }
+
+        return NoContent();
+    }
+
     private Task<List<string>> GetAcceptedFriendIds(string userId, CancellationToken cancellationToken)
         => _context.Friendships.AsNoTracking()
             .Where(f => f.Status == FriendshipStatus.Accepted &&
