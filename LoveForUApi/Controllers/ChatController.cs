@@ -220,7 +220,10 @@ public sealed class ChatController : ControllerBase
             }
 
             var senderCanUsePhoto = string.Equals(photo.UploaderId, userId, StringComparison.Ordinal) ||
-                                    photo.Shares.Any(s => string.Equals(s.RecipientId, userId, StringComparison.Ordinal));
+                                    photo.Shares.Any(s => string.Equals(s.RecipientId, userId, StringComparison.Ordinal)) ||
+                                    (!photo.Shares.Any() &&
+                                     (string.Equals(photo.UploaderId, recipientId, StringComparison.Ordinal) ||
+                                      string.Equals(photo.UploaderId, userId, StringComparison.Ordinal)));
 
             if (!senderCanUsePhoto)
             {
